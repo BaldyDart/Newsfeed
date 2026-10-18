@@ -1,46 +1,85 @@
 package nl.newsdrive.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.ComponentName
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.slider.Slider
+import com.google.android.material.snackbar.Snackbar
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 
-/** Minimal phone UI: one big button to start the news, one to refresh. */
-class MainActivity : Activity() {
+/** Phone UI: artwork tile, seek bar and transport controls. Talks to PlaybackService via a MediaController. */
+class MainActivity : AppCompatActivity() {
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
-    private lateinit var playButton: Button
-    private lateinit var refreshButton: Button
-    private lateinit var statusView: TextView
-
+    private val ui = Handler(Looper.getMainLooper())
     private var refreshing = false
-    private var errorText: String? = null
+    private var dragging = false
+    private var shownArtwork: String? = null
+    private var seekMaxSeconds = 1f
 
-    private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = updateUi()
+    private lateinit var root: View
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var refreshProgress: LinearProgressIndicator
+    private lateinit var artwork: ImageView
+    private lateinit var titleView: TextView
+    private lateinit var subtitleView: TextView
+    private lateinit var queueInfoView: TextView
+    private lateinit var seek: Slider
+    private lateinit var positionView: TextView
+    private lateinit var durationView: TextView
+    private lateinit var btnPrev: ImageButton
+    private lateinit var btnBack: ImageButton
+    private lateinit var btnPlay: FloatingActionButton
+    private lateinit var btnForward: ImageButton
+    private lateinit var btnNext: ImageButton
+
+    private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            updateUi()
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            showMessage("Could not play this bulletin. Try Refresh.")
+        }
+    }
+
+    private val ticker = object : Runnable {
+        override fun run() {
+            updateProgress()
+            ui.postDelayed(this, 500)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildUi()
+        setContentView(R.layout.activity_main)
+        bindViews()
+        wireActions()
+        updateUi()
+
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
@@ -53,137 +92,205 @@ class MainActivity : Activity() {
         controllerFuture = future
         future.addListener({
             try {
-                controller = future.get().also { it.addListener(listener) }
+                controller = future.get().also { it.addListener(playerListener) }
             } catch (e: Exception) {
-                errorText = "Cannot connect to the player"
+                showMessage("Cannot connect to the player")
             }
             updateUi()
         }, ContextCompat.getMainExecutor(this))
+        ui.post(ticker)
     }
 
     override fun onStop() {
-        controller?.removeListener(listener)
+        ui.removeCallbacks(ticker)
+        controller?.removeListener(playerListener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
         controllerFuture = null
         super.onStop()
     }
 
+    // ------------------------------------------------------------ setup
+
+    private fun bindViews() {
+        root = findViewById(R.id.root)
+        toolbar = findViewById(R.id.toolbar)
+        refreshProgress = findViewById(R.id.refreshProgress)
+        artwork = findViewById(R.id.artwork)
+        titleView = findViewById(R.id.title)
+        subtitleView = findViewById(R.id.subtitle)
+        queueInfoView = findViewById(R.id.queueInfo)
+        seek = findViewById(R.id.seek)
+        positionView = findViewById(R.id.position)
+        durationView = findViewById(R.id.duration)
+        btnPrev = findViewById(R.id.btnPrev)
+        btnBack = findViewById(R.id.btnBack)
+        btnPlay = findViewById(R.id.btnPlay)
+        btnForward = findViewById(R.id.btnForward)
+        btnNext = findViewById(R.id.btnNext)
+    }
+
+    private fun wireActions() {
+        toolbar.inflateMenu(R.menu.main)
+        toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_refresh) {
+                onRefreshClicked()
+                true
+            } else {
+                false
+            }
+        }
+
+        btnPlay.setOnClickListener { onPlayClicked() }
+        btnNext.setOnClickListener { controller?.seekToNextMediaItem() }
+        btnPrev.setOnClickListener {
+            val c = controller ?: return@setOnClickListener
+            if (c.hasPreviousMediaItem()) c.seekToPreviousMediaItem() else c.seekTo(0L)
+        }
+        btnBack.setOnClickListener { controller?.seekBack() }
+        btnForward.setOnClickListener { controller?.seekForward() }
+
+        seek.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) positionView.text = formatTime((value * 1000).toLong())
+        }
+        seek.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+            override fun onStartTrackingTouch(slider: Slider) {
+                dragging = true
+            }
+
+            override fun onStopTrackingTouch(slider: Slider) {
+                dragging = false
+                controller?.seekTo((slider.value * 1000).toLong())
+            }
+        })
+    }
+
     // ------------------------------------------------------------ actions
 
     private fun onPlayClicked() {
         val c = controller ?: return
-        errorText = null
-        val state = c.playbackState
-        val hasQueue = c.mediaItemCount > 0 && state != Player.STATE_IDLE && state != Player.STATE_ENDED
         when {
             c.isPlaying -> c.pause()
-            hasQueue -> c.play()
-            else -> startNews(c)
+            hasActiveQueue(c) -> c.play()
+            else -> {
+                c.setMediaItem(MediaItem.Builder().setMediaId(NewsConfig.ALL_ID).build())
+                c.prepare()
+                c.play()
+            }
         }
         updateUi()
-    }
-
-    private fun startNews(c: MediaController) {
-        c.setMediaItem(MediaItem.Builder().setMediaId(NewsConfig.ALL_ID).build())
-        c.prepare()
-        c.play()
     }
 
     private fun onRefreshClicked() {
         val c = controller ?: return
+        if (refreshing) return
         refreshing = true
-        errorText = null
         updateUi()
         val result = c.sendCustomCommand(SessionCommand(NewsConfig.ACTION_REFRESH, Bundle.EMPTY), Bundle.EMPTY)
         result.addListener({
             refreshing = false
-            val code = try { result.get().resultCode } catch (e: Exception) { -1 }
-            if (code != 0) errorText = "Could not reach the news feeds"
+            val code = try {
+                result.get().resultCode
+            } catch (e: Exception) {
+                SessionResult.RESULT_ERROR_UNKNOWN
+            }
+            if (code != SessionResult.RESULT_SUCCESS) showMessage("Could not reach the news feeds")
             updateUi()
         }, MoreExecutors.directExecutor())
     }
 
-    // ------------------------------------------------------------ UI
+    private fun showMessage(text: String) {
+        Snackbar.make(root, text, Snackbar.LENGTH_LONG).show()
+    }
+
+    // ------------------------------------------------------------ UI state
+
+    private fun hasActiveQueue(c: MediaController): Boolean =
+        c.mediaItemCount > 0 &&
+            c.playbackState != Player.STATE_IDLE &&
+            c.playbackState != Player.STATE_ENDED
 
     private fun updateUi() {
         val c = controller
-        playButton.text = if (c != null && c.isPlaying) "⏸  Pause" else "▶  Play news"
-        refreshButton.isEnabled = c != null && !refreshing
+        val active = c != null && hasActiveQueue(c)
 
-        statusView.text = when {
-            errorText != null -> errorText
-            refreshing -> "Refreshing…"
-            c == null -> "Connecting…"
-            c.mediaItemCount == 0 || c.playbackState == Player.STATE_IDLE ->
-                NewsConfig.SOURCES.joinToString(" → ") { it.name }
-            c.playbackState == Player.STATE_ENDED -> "That was all the news.\nTap play for fresh bulletins."
-            else -> {
-                val md = c.mediaMetadata
-                "${md.title ?: ""}\n${md.artist ?: ""}\n\n" +
-                    "${c.currentMediaItemIndex + 1} / ${c.mediaItemCount}" +
-                    if (c.playbackState == Player.STATE_BUFFERING) "  ·  buffering…" else ""
+        refreshProgress.visibility = if (refreshing) View.VISIBLE else View.INVISIBLE
+        toolbar.menu.findItem(R.id.action_refresh)?.isEnabled = c != null && !refreshing
+
+        btnPlay.isEnabled = c != null
+        btnPlay.setImageResource(if (c != null && c.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        btnPlay.contentDescription =
+            getString(if (c != null && c.isPlaying) R.string.pause else R.string.play)
+
+        setControl(btnPrev, active)
+        setControl(btnBack, active)
+        setControl(btnForward, active)
+        setControl(btnNext, active && c != null && c.hasNextMediaItem())
+
+        if (active && c != null) {
+            val md = c.mediaMetadata
+            titleView.text = md.title ?: ""
+            subtitleView.text = md.artist ?: ""
+            queueInfoView.text = buildString {
+                append("Bulletin ${c.currentMediaItemIndex + 1} of ${c.mediaItemCount}")
+                if (c.playbackState == Player.STATE_BUFFERING) append("  ·  buffering…")
             }
+            showArtwork(md.artworkUri?.toString())
+        } else {
+            titleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) "That was all the news" else "NewsDrive"
+            subtitleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) {
+                "Press play for fresh bulletins"
+            } else {
+                NewsConfig.SOURCES.joinToString(" → ") { it.name }
+            }
+            queueInfoView.text = if (c == null) "Connecting…" else ""
+            showArtwork(null)
+        }
+        updateProgress()
+    }
+
+    private fun setControl(button: ImageButton, enabled: Boolean) {
+        button.isEnabled = enabled
+        button.alpha = if (enabled) 1f else 0.38f
+    }
+
+    private fun showArtwork(url: String?) {
+        if (url == shownArtwork) return
+        shownArtwork = url
+        if (url == null) {
+            artwork.tag = null
+            artwork.setImageResource(R.drawable.ic_news)
+        } else {
+            ArtworkLoader.load(this, url, artwork)
         }
     }
 
-    private fun buildUi() {
-        val dp = resources.displayMetrics.density
-        fun px(v: Int) = (v * dp).toInt()
-
-        fun pill(color: Int) = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = 28 * dp
-            setColor(color)
+    private fun updateProgress() {
+        val c = controller
+        if (c == null || dragging) return
+        val duration = c.duration
+        val playable = hasActiveQueue(c) && duration != C.TIME_UNSET && duration > 0
+        if (!playable) {
+            seek.isEnabled = false
+            seek.value = 0f
+            positionView.text = formatTime(0)
+            durationView.text = "--:--"
+            return
         }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#101418"))
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(px(24), px(48), px(24), px(24))
+        val max = maxOf(duration / 1000f, 1f)
+        if (max != seekMaxSeconds) {
+            seekMaxSeconds = max
+            seek.valueTo = max
         }
+        seek.isEnabled = true
+        val pos = c.currentPosition.coerceAtLeast(0L)
+        seek.value = minOf(pos / 1000f, max)
+        positionView.text = formatTime(pos)
+        durationView.text = formatTime(duration)
+    }
 
-        val title = TextView(this).apply {
-            text = "NewsDrive"
-            textSize = 22f
-            setTextColor(Color.parseColor("#9AA7B4"))
-            gravity = Gravity.CENTER
-        }
-        root.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        playButton = Button(this).apply {
-            textSize = 30f
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            background = pill(Color.parseColor("#1B6EF3"))
-            setOnClickListener { onPlayClicked() }
-        }
-        root.addView(playButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(140)).apply {
-            topMargin = px(40)
-        })
-
-        refreshButton = Button(this).apply {
-            text = "↻  Refresh"
-            textSize = 20f
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            background = pill(Color.parseColor("#2A333D"))
-            setOnClickListener { onRefreshClicked() }
-        }
-        root.addView(refreshButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(72)).apply {
-            topMargin = px(16)
-        })
-
-        statusView = TextView(this).apply {
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-        }
-        root.addView(statusView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = px(32)
-        })
-
-        setContentView(root)
+    private fun formatTime(ms: Long): String {
+        val totalSeconds = ms / 1000
+        return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
     }
 }

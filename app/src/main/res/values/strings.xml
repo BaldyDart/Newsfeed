@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NewsDrive</string>
+    <string name="refresh">Refresh</string>
+    <string name="previous">Previous bulletin</string>
+    <string name="next">Next bulletin</string>
+    <string name="back10">Back 10 seconds</string>
+    <string name="forward10">Forward 10 seconds</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="artwork">Station artwork</string>
 </resources>

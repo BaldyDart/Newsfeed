@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NewsDrive" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#0B5BD3</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#D9E2FF</item>
+        <item name="colorOnPrimaryContainer">#001945</item>
+    </style>
+</resources>

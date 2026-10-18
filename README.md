@@ -12,9 +12,12 @@ Works on the phone and in **Android Auto** (it is a native media app, which is t
 
 - **Play news** (phone) or **Play all news** (Android Auto) fetches the newest episode of every source *at that moment* and queues them in the order above.
 - Pressing play with nothing loaded (headset button, Android Auto "resume") also starts the news.
-- **Refresh** re-downloads all three feeds and restarts the queue with the newest bulletins. On the phone it is the Refresh button; in Android Auto it is the custom action next to the playback controls.
-- Next / previous skip between bulletins.
+- **Previous / next bulletin** jump between the three sources. Previous on the first one restarts it.
+- **Back / forward 10 seconds** on the phone screen, in the notification, and as buttons in Android Auto.
+- **Artwork tile** of the current station on the phone, notification, lock screen and car display.
+- **Refresh** (top-right on the phone, a button in Android Auto) re-downloads all three feeds and restarts with the newest bulletins.
 - If one source is unreachable it is skipped; the rest still play.
+- Material 3 look: follows your wallpaper colours and light/dark mode on Android 12+.
 
 ## Build
 

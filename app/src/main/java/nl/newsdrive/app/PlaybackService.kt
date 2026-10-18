@@ -1,14 +1,17 @@
 package nl.newsdrive.app
 
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -34,7 +37,7 @@ import java.util.concurrent.Executors
 class PlaybackService : MediaLibraryService() {
 
     private var session: MediaLibrarySession? = null
-    private lateinit var player: ExoPlayer
+    private lateinit var exoPlayer: ExoPlayer
     private val main = Handler(Looper.getMainLooper())
 
     // Cached pool: feed downloads block on each other's results, so a bounded pool could deadlock.
@@ -42,10 +45,13 @@ class PlaybackService : MediaLibraryService() {
         MoreExecutors.listeningDecorator(Executors.newCachedThreadPool())
 
     private val refreshCommand = SessionCommand(NewsConfig.ACTION_REFRESH, Bundle.EMPTY)
+    private val back10Command = SessionCommand(NewsConfig.ACTION_BACK10, Bundle.EMPTY)
+    private val fwd10Command = SessionCommand(NewsConfig.ACTION_FWD10, Bundle.EMPTY)
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        player = ExoPlayer.Builder(this)
+        exoPlayer =ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -55,9 +61,23 @@ class PlaybackService : MediaLibraryService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(10_000)
             .build()
 
-        session = MediaLibrarySession.Builder(this, player, LibraryCallback()).build()
+        // "Previous" always means the previous bulletin (or the start of the first one),
+        // instead of the default "restart the current item if more than 3 s in".
+        val sessionPlayer = object : ForwardingPlayer(exoPlayer) {
+            override fun seekToPrevious() {
+                if (hasPreviousMediaItem()) seekToPreviousMediaItem() else seekTo(0L)
+            }
+        }
+
+        session = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback()).build()
+
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(this).build()
+        notificationProvider.setSmallIcon(R.drawable.ic_stat_news)
+        setMediaNotificationProvider(notificationProvider)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -111,9 +131,9 @@ class PlaybackService : MediaLibraryService() {
                 if (items.isEmpty()) {
                     result.set(SessionResult(SessionResult.RESULT_ERROR_IO))
                 } else {
-                    player.setMediaItems(items, 0, 0L)
-                    player.prepare()
-                    player.play()
+                    exoPlayer.setMediaItems(items, 0, 0L)
+                    exoPlayer.prepare()
+                    exoPlayer.play()
                     result.set(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
             }
@@ -141,6 +161,7 @@ class PlaybackService : MediaLibraryService() {
             MediaMetadata.Builder()
                 .setTitle("Play all news")
                 .setSubtitle(NewsConfig.SOURCES.joinToString(" → ") { it.name })
+                .setArtworkUri(Uri.parse(NewsConfig.APP_TILE))
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
@@ -148,17 +169,25 @@ class PlaybackService : MediaLibraryService() {
         )
         .build()
 
-    private fun sourceItem(s: NewsSource) = MediaItem.Builder()
-        .setMediaId(NewsConfig.SOURCE_PREFIX + s.id)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(s.name)
-                .setIsBrowsable(false)
-                .setIsPlayable(true)
-                .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
-                .build()
-        )
-        .build()
+    private fun sourceItem(s: NewsSource): MediaItem {
+        val meta = MediaMetadata.Builder()
+            .setTitle(s.name)
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+        s.artwork?.let { meta.setArtworkUri(Uri.parse(it)) }
+        return MediaItem.Builder()
+            .setMediaId(NewsConfig.SOURCE_PREFIX + s.id)
+            .setMediaMetadata(meta.build())
+            .build()
+    }
+
+    private fun button(name: String, iconRes: Int, command: SessionCommand): CommandButton =
+        CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+            .setDisplayName(name)
+            .setIconResId(iconRes)
+            .setSessionCommand(command)
+            .build()
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
 
@@ -166,18 +195,20 @@ class PlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo
         ): MediaSession.ConnectionResult {
-            val refreshButton = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
-                .setDisplayName("Refresh")
-                .setIconResId(R.drawable.ic_refresh)
-                .setSessionCommand(refreshCommand)
-                .build()
+            val layout = ImmutableList.of(
+                button("Back 10 seconds", R.drawable.ic_replay_10, back10Command),
+                button("Forward 10 seconds", R.drawable.ic_forward_10, fwd10Command),
+                button("Refresh", R.drawable.ic_refresh, refreshCommand),
+            )
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                 .buildUpon()
                 .add(refreshCommand)
+                .add(back10Command)
+                .add(fwd10Command)
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
-                .setCustomLayout(ImmutableList.of(refreshButton))
+                .setCustomLayout(layout)
                 .build()
         }
 
@@ -186,12 +217,15 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             customCommand: SessionCommand,
             args: Bundle
-        ): ListenableFuture<SessionResult> =
-            if (customCommand.customAction == NewsConfig.ACTION_REFRESH) {
-                refreshAndPlay()
-            } else {
-                Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        ): ListenableFuture<SessionResult> {
+            val ok = Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            return when (customCommand.customAction) {
+                NewsConfig.ACTION_REFRESH -> refreshAndPlay()
+                NewsConfig.ACTION_BACK10 -> { session.player.seekBack(); ok }
+                NewsConfig.ACTION_FWD10 -> { session.player.seekForward(); ok }
+                else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
+        }
 
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
