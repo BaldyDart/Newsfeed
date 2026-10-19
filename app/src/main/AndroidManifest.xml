@@ -28,6 +28,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".FeedsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false" />
+
         <service
             android:name=".PlaybackService"
             android:exported="true"

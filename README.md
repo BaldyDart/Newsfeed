@@ -5,6 +5,8 @@ One-tap news for the car. Plays the latest bulletin of each source back to back:
 1. **ANP Journaal** (ANP radio bulletin, hourly)
 2. **BNR Nieuwsupdate** (every 30 min)
 3. **NPR News Now** (hourly, about 5 min)
+4. **VRT NWS** (live radio stream, plays 5 minutes, then moves on)
+5. **BBC World News** (Global News Podcast, about 30 min; off by default, switch on under Settings > Feeds)
 
 Works on the phone and in **Android Auto** (it is a native media app, which is the only kind Android Auto lists).
 
@@ -18,6 +20,13 @@ Works on the phone and in **Android Auto** (it is a native media app, which is t
 - **Refresh** (top-right on the phone, a button in Android Auto) re-downloads all three feeds and restarts with the newest bulletins.
 - If one source is unreachable it is skipped; the rest still play.
 - Material 3 look: follows your wallpaper colours and light/dark mode on Android 12+.
+
+## Settings
+
+Tap the gear in the top-right corner of the phone screen:
+
+- **Feeds**: switch each news feed on or off. Feeds play in the order shown, at least one must stay on, and the choice is remembered. It applies the next time you start or refresh the news, in the app and in Android Auto.
+- **About**: app version, author, year and the project URL (https://github.com/BaldyDart/Newsfeed).
 
 ## Build
 
@@ -37,7 +46,7 @@ Apps installed outside the Play Store only show up in Android Auto after you all
 
 ## Changing a station
 
-Edit `NewsConfig.SOURCES` in `app/src/main/java/nl/newsdrive/app/NewsFeeds.kt`. Any podcast RSS feed whose newest item has an audio enclosure works; order in the list is playback order.
+Edit `NewsConfig.SOURCES` in `app/src/main/java/nl/newsdrive/app/NewsFeeds.kt`. Any podcast RSS feed whose newest item has an audio enclosure works, and a live stream works with `streamUrl` and `liveMinutes`; order in the list is playback order.
 
 ## Notes
 

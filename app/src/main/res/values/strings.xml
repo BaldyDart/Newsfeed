@@ -9,4 +9,14 @@
     <string name="play">Play</string>
     <string name="pause">Pause</string>
     <string name="artwork">Station artwork</string>
+    <string name="settings">Settings</string>
+    <string name="feeds">Feeds</string>
+    <string name="about">About</string>
+    <string name="feeds_hint">Choose which feeds are played. They play in the order shown.</string>
+    <string name="feeds_note">Changes apply the next time you start or refresh the news.</string>
+    <string name="keep_one_feed">Keep at least one feed on</string>
+    <string name="about_project">Project</string>
+    <string name="about_author">Created by</string>
+    <string name="about_year">Year</string>
+    <string name="about_not_set">Not set</string>
 </resources>

@@ -2,13 +2,16 @@ package nl.newsdrive.app
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -133,11 +136,16 @@ class MainActivity : AppCompatActivity() {
     private fun wireActions() {
         toolbar.inflateMenu(R.menu.main)
         toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_refresh) {
-                onRefreshClicked()
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.action_refresh -> {
+                    onRefreshClicked()
+                    true
+                }
+                R.id.action_settings -> {
+                    showSettingsMenu()
+                    true
+                }
+                else -> false
             }
         }
 
@@ -199,6 +207,27 @@ class MainActivity : AppCompatActivity() {
         }, MoreExecutors.directExecutor())
     }
 
+    /** Gear icon: small popup with Feeds and About. */
+    private fun showSettingsMenu() {
+        val anchor = toolbar.findViewById<View>(R.id.action_settings) ?: toolbar
+        val popup = PopupMenu(this, anchor, Gravity.END)
+        popup.menuInflater.inflate(R.menu.settings, popup.menu)
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.menu_feeds -> {
+                    startActivity(Intent(this, FeedsActivity::class.java))
+                    true
+                }
+                R.id.menu_about -> {
+                    startActivity(Intent(this, AboutActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
+    }
+
     private fun showMessage(text: String) {
         Snackbar.make(root, text, Snackbar.LENGTH_LONG).show()
     }
@@ -241,7 +270,7 @@ class MainActivity : AppCompatActivity() {
             subtitleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) {
                 "Press play for fresh bulletins"
             } else {
-                NewsConfig.SOURCES.joinToString(" → ") { it.name }
+                FeedSettings.enabledSources(this).joinToString(" → ") { it.name }
             }
             queueInfoView.text = if (c == null) "Connecting…" else ""
             showArtwork(null)

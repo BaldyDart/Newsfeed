@@ -9,6 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
+ * @param description        one line shown on the Feeds settings screen.
  * @param artwork            default image (URL or android.resource:// URI) used in browse lists and as fallback.
  * @param preferFeedArtwork  true = use the image the feed itself publishes when available.
  */
@@ -16,9 +17,17 @@ data class NewsSource(
     val id: String,
     val name: String,
     val feedUrl: String,
+    val description: String = "",
     val artwork: String? = null,
     val preferFeedArtwork: Boolean = true,
-)
+    /** Set for live radio streams: played directly, for [liveMinutes], then the queue moves on. */
+    val streamUrl: String? = null,
+    val liveMinutes: Int = 5,
+    /** Whether the feed is switched on until the user changes it on the Feeds screen. */
+    val defaultOn: Boolean = true,
+) {
+    val isLive: Boolean get() = streamUrl != null
+}
 
 /** One resolved bulletin: the newest audio episode of a source. */
 data class Bulletin(
@@ -50,6 +59,7 @@ object NewsConfig {
         NewsSource(
             id = "anp",
             name = "ANP Journaal",
+            description = "Dutch radio news from ANP, every hour",
             feedUrl = "https://www.omnycontent.com/d/playlist/56ccbbb7-0ff7-4482-9d99-a88800f49f6c/" +
                 "25c8f040-d23c-4776-b211-a8e3009d004d/6ec59e7c-895f-4ed5-8c28-a8e3009d51ca/podcast.rss",
             artwork = RES + "tile_anp",
@@ -59,6 +69,7 @@ object NewsConfig {
         NewsSource(
             id = "bnr",
             name = "BNR Nieuwsupdate",
+            description = "Dutch business news radio, every 30 minutes",
             feedUrl = "https://www.omnycontent.com/d/playlist/8257a063-6be9-42fa-b892-acd4013b1255/" +
                 "84d4de9f-8ca2-40c5-8d33-b0ce00d6f186/e4c79cb6-51a3-4c08-9573-b0ce00d746db/podcast.rss",
             artwork = "https://www.omnycontent.com/d/programs/8257a063-6be9-42fa-b892-acd4013b1255/" +
@@ -68,9 +79,32 @@ object NewsConfig {
         NewsSource(
             id = "npr",
             name = "NPR News Now",
+            description = "English news from NPR, every hour",
             feedUrl = "https://feeds.npr.org/500005/podcast.xml",
             artwork = "https://media.npr.org/assets/img/2023/01/24/" +
                 "npr-news-now_tile_sq-2334a5fd44563fa94cdcdb27384b0f05987c2d15.jpg?s=1400&c=66&f=jpg",
+        ),
+        // VRT NWS (Flemish public broadcaster): live radio stream, played for a few minutes.
+        // Live radio has no "latest bulletin", so it plays what is on air and then moves on.
+        NewsSource(
+            id = "vrt",
+            name = "VRT NWS",
+            description = "Flemish news radio, live stream (plays 5 minutes)",
+            feedUrl = "",
+            streamUrl = "https://icecast.vrtcdn.be/vrtnws-high.mp3",
+            liveMinutes = 5,
+            artwork = RES + "tile_vrt",
+        ),
+        // BBC Global News Podcast (BBC World Service). Not hourly: a ~30 minute programme
+        // published several times a day. Off by default; replace feedUrl if you find an hourly feed.
+        NewsSource(
+            id = "bbc",
+            name = "BBC World News",
+            description = "BBC World Service Global News Podcast (about 30 min, off by default)",
+            feedUrl = "https://podcasts.files.bbci.co.uk/p02nq0gn.rss",
+            artwork = RES + "tile_bbc",
+            preferFeedArtwork = false,
+            defaultOn = false,
         ),
     )
 
@@ -81,6 +115,9 @@ object FeedFetcher {
 
     /** Downloads just enough of the feed to find the newest playable episode. Returns null on failure. */
     fun latest(source: NewsSource): Bulletin? {
+        source.streamUrl?.let {
+            return Bulletin(source, "Live radio · ${source.liveMinutes} min", it, source.artwork)
+        }
         val conn = (URL(source.feedUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8_000
             readTimeout = 8_000

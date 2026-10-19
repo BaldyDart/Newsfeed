@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -30,7 +31,7 @@ import java.util.concurrent.Executors
 /**
  * Media service used by both the phone UI and Android Auto.
  *
- * Library tree:  root -> [ "Play all news", ANP, BNR, NPR ]
+ * Library tree:  root -> [ "Play all news", then every enabled source ]
  * Selecting "Play all news" resolves, at that moment, to the newest bulletin of every source,
  * queued in NewsConfig.SOURCES order.
  */
@@ -73,11 +74,28 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = rescheduleLiveStop()
+            override fun onIsPlayingChanged(isPlaying: Boolean) = rescheduleLiveStop()
+        })
+
         session = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback()).build()
 
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this).build()
         notificationProvider.setSmallIcon(R.drawable.ic_stat_news)
         setMediaNotificationProvider(notificationProvider)
+    }
+
+    // A live stream never ends, so it is cut after its configured time and the queue moves on.
+    private val liveStop = Runnable {
+        if (exoPlayer.hasNextMediaItem()) exoPlayer.seekToNextMediaItem() else exoPlayer.stop()
+    }
+
+    private fun rescheduleLiveStop() {
+        main.removeCallbacks(liveStop)
+        val id = exoPlayer.currentMediaItem?.mediaId ?: return
+        val src = NewsConfig.byId(id.removePrefix(NewsConfig.SOURCE_PREFIX)) ?: return
+        if (src.isLive && exoPlayer.isPlaying) main.postDelayed(liveStop, src.liveMinutes * 60_000L)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -88,6 +106,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(liveStop)
         session?.run {
             player.release()
             release()
@@ -112,7 +131,7 @@ class PlaybackService : MediaLibraryService() {
         for (item in requested) {
             when {
                 item.localConfiguration != null -> out.add(item) // already has a URI
-                item.mediaId == NewsConfig.ALL_ID -> out.addAll(loadItems(NewsConfig.SOURCES))
+                item.mediaId == NewsConfig.ALL_ID -> out.addAll(loadItems(FeedSettings.enabledSources(this@PlaybackService)))
                 item.mediaId.startsWith(NewsConfig.SOURCE_PREFIX) -> {
                     val src = NewsConfig.byId(item.mediaId.removePrefix(NewsConfig.SOURCE_PREFIX))
                     if (src != null) out.addAll(loadItems(listOf(src)))
@@ -126,7 +145,7 @@ class PlaybackService : MediaLibraryService() {
     private fun refreshAndPlay(): ListenableFuture<SessionResult> {
         val result = SettableFuture.create<SessionResult>()
         io.execute {
-            val items = loadItems(NewsConfig.SOURCES)
+            val items = loadItems(FeedSettings.enabledSources(this))
             main.post {
                 if (items.isEmpty()) {
                     result.set(SessionResult(SessionResult.RESULT_ERROR_IO))
@@ -160,7 +179,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Play all news")
-                .setSubtitle(NewsConfig.SOURCES.joinToString(" → ") { it.name })
+                .setSubtitle(FeedSettings.enabledSources(this).joinToString(" → ") { it.name })
                 .setArtworkUri(Uri.parse(NewsConfig.APP_TILE))
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
@@ -247,7 +266,7 @@ class PlaybackService : MediaLibraryService() {
             }
             val children = ImmutableList.builder<MediaItem>()
                 .add(playAllItem())
-                .addAll(NewsConfig.SOURCES.map { sourceItem(it) })
+                .addAll(FeedSettings.enabledSources(this@PlaybackService).map { sourceItem(it) })
                 .build()
             return Futures.immediateFuture(LibraryResult.ofItemList(children, params))
         }
