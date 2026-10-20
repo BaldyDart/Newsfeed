@@ -23,6 +23,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.progressindicator.LinearProgressIndicator
@@ -40,13 +41,14 @@ class MainActivity : AppCompatActivity() {
     private val ui = Handler(Looper.getMainLooper())
     private var refreshing = false
     private var dragging = false
-    private var shownArtwork: String? = null
+    private var userSwiping = false
+    private val cardAdapter = CardAdapter()
     private var seekMaxSeconds = 1f
 
     private lateinit var root: View
     private lateinit var toolbar: MaterialToolbar
     private lateinit var refreshProgress: LinearProgressIndicator
-    private lateinit var artwork: ImageView
+    private lateinit var cards: ViewPager2
     private lateinit var titleView: TextView
     private lateinit var subtitleView: TextView
     private lateinit var queueInfoView: TextView
@@ -119,7 +121,23 @@ class MainActivity : AppCompatActivity() {
         root = findViewById(R.id.root)
         toolbar = findViewById(R.id.toolbar)
         refreshProgress = findViewById(R.id.refreshProgress)
-        artwork = findViewById(R.id.artwork)
+        cards = findViewById(R.id.cards)
+        cards.adapter = cardAdapter
+        CardAdapter.install(cards)
+        cards.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageScrollStateChanged(state: Int) {
+                if (state == ViewPager2.SCROLL_STATE_DRAGGING) userSwiping = true
+                else if (state == ViewPager2.SCROLL_STATE_IDLE) userSwiping = false
+            }
+
+            override fun onPageSelected(position: Int) {
+                val c = controller ?: return
+                if (userSwiping && hasActiveQueue(c) && position != c.currentMediaItemIndex) {
+                    c.seekToDefaultPosition(position)
+                    c.play()
+                }
+            }
+        })
         titleView = findViewById(R.id.title)
         subtitleView = findViewById(R.id.subtitle)
         queueInfoView = findViewById(R.id.queueInfo)
@@ -264,34 +282,36 @@ class MainActivity : AppCompatActivity() {
                 append("Bulletin ${c.currentMediaItemIndex + 1} of ${c.mediaItemCount}")
                 if (c.playbackState == Player.STATE_BUFFERING) append("  ·  buffering…")
             }
-            showArtwork(md.artworkUri?.toString())
         } else {
-            titleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) "That was all the news" else "NewsDrive"
+            titleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) "That was all the news" else "News Now!"
             subtitleView.text = if (c != null && c.playbackState == Player.STATE_ENDED) {
                 "Press play for fresh bulletins"
             } else {
                 FeedSettings.enabledSources(this).joinToString(" → ") { it.name }
             }
             queueInfoView.text = if (c == null) "Connecting…" else ""
-            showArtwork(null)
         }
+        updateCards(c, active)
         updateProgress()
+    }
+
+    /** Cards show the queue while playing, and the enabled stations while idle. */
+    private fun updateCards(c: MediaController?, active: Boolean) {
+        val urls: List<String?> = if (active && c != null) {
+            (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaMetadata.artworkUri?.toString() }
+        } else {
+            FeedSettings.enabledSources(this).map { it.artwork }
+        }
+        cardAdapter.submit(urls)
+        if (active && c != null && !userSwiping) {
+            val i = c.currentMediaItemIndex
+            if (i in urls.indices && cards.currentItem != i) cards.setCurrentItem(i, true)
+        }
     }
 
     private fun setControl(button: ImageButton, enabled: Boolean) {
         button.isEnabled = enabled
         button.alpha = if (enabled) 1f else 0.38f
-    }
-
-    private fun showArtwork(url: String?) {
-        if (url == shownArtwork) return
-        shownArtwork = url
-        if (url == null) {
-            artwork.tag = null
-            artwork.setImageResource(R.drawable.ic_news)
-        } else {
-            ArtworkLoader.load(this, url, artwork)
-        }
     }
 
     private fun updateProgress() {

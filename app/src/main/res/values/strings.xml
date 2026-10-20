@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NewsDrive</string>
+    <string name="app_name">News Now!</string>
     <string name="refresh">Refresh</string>
     <string name="previous">Previous bulletin</string>
     <string name="next">Next bulletin</string>

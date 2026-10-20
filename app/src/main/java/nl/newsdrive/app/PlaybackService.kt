@@ -52,7 +52,15 @@ class PlaybackService : MediaLibraryService() {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        exoPlayer =ExoPlayer.Builder(this)
+        val http = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setUserAgent("NewsNow/1.4 (Android)")
+        exoPlayer = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+                    androidx.media3.datasource.DefaultDataSource.Factory(this, http)
+                )
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -166,7 +174,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(NewsConfig.ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("NewsDrive")
+                .setTitle("News Now!")
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)

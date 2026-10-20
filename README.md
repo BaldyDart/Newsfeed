@@ -1,4 +1,4 @@
-# NewsDrive
+# News Now!
 
 One-tap news for the car. Plays the latest bulletin of each source back to back:
 
@@ -6,7 +6,11 @@ One-tap news for the car. Plays the latest bulletin of each source back to back:
 2. **BNR Nieuwsupdate** (every 30 min)
 3. **NPR News Now** (hourly, about 5 min)
 4. **VRT NWS** (live radio stream, plays 5 minutes, then moves on)
-5. **BBC World News** (Global News Podcast, about 30 min; off by default, switch on under Settings > Feeds)
+5. **BBC World News** (BBC Minute, one-minute bulletin every hour)
+
+Off by default, switch on under Settings > Feeds: **BBC Global News** (about 30 min) and **L1 Limburg** (live regional radio for Dutch Limburg, plays 5 minutes).
+
+The stations are shown as swipeable 3D cards; swiping while playing jumps to that bulletin.
 
 Works on the phone and in **Android Auto** (it is a native media app, which is the only kind Android Auto lists).
 
@@ -34,7 +38,7 @@ You need a computer with Android Studio, or a free GitHub account.
 
 **Android Studio:** open this folder, let Gradle sync, run on your phone (USB debugging) or *Build > Build APK*.
 
-**GitHub (no installs):** push this folder to a new repo, open the *Actions* tab, run *Build APK*, download `NewsDrive-debug-apk`, and install the `.apk` on your phone.
+**GitHub (no installs):** push this folder to a new repo, open the *Actions* tab, run *Build APK*, download `News Now!-debug-apk`, and install the `.apk` on your phone.
 
 ## Android Auto
 
@@ -42,7 +46,7 @@ Apps installed outside the Play Store only show up in Android Auto after you all
 
 1. Android Auto settings on the phone: tap the *Version* entry about 10 times to enable developer mode.
 2. Three-dot menu > *Developer settings* > enable **Unknown sources**.
-3. Reconnect to the car. NewsDrive appears in the media app list.
+3. Reconnect to the car. News Now! appears in the media app list.
 
 ## Changing a station
 

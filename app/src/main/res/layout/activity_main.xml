@@ -35,20 +35,14 @@
             android:paddingHorizontal="16dp"
             android:paddingVertical="16dp">
 
-            <com.google.android.material.card.MaterialCardView
-                style="?attr/materialCardViewElevatedStyle"
-                android:layout_width="280dp"
-                android:layout_height="280dp"
-                app:cardCornerRadius="32dp">
-
-                <ImageView
-                    android:id="@+id/artwork"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:contentDescription="@string/artwork"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/ic_news" />
-            </com.google.android.material.card.MaterialCardView>
+            <androidx.viewpager2.widget.ViewPager2
+                android:id="@+id/cards"
+                android:layout_width="match_parent"
+                android:layout_height="300dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:contentDescription="@string/artwork"
+                android:overScrollMode="never" />
 
             <TextView
                 android:id="@+id/title"

@@ -22,7 +22,7 @@ class AboutActivity : AppCompatActivity() {
             null
         }) ?: ""
 
-        findViewById<TextView>(R.id.aboutApp).text = "NewsDrive $version".trim()
+        findViewById<TextView>(R.id.aboutApp).text = "News Now! $version".trim()
         findViewById<TextView>(R.id.aboutAuthor).text = AboutInfo.AUTHOR
         findViewById<TextView>(R.id.aboutYear).text = AboutInfo.YEAR
 

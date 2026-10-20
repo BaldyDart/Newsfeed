@@ -95,15 +95,34 @@ object NewsConfig {
             liveMinutes = 5,
             artwork = RES + "tile_vrt",
         ),
-        // BBC Global News Podcast (BBC World Service). Not hourly: a ~30 minute programme
-        // published several times a day. Off by default; replace feedUrl if you find an hourly feed.
+        // BBC Minute: one-minute world news bulletin, updated every hour.
         NewsSource(
             id = "bbc",
             name = "BBC World News",
-            description = "BBC World Service Global News Podcast (about 30 min, off by default)",
+            description = "BBC Minute, one-minute world news every hour",
+            feedUrl = "https://podcasts.files.bbci.co.uk/p03q9cgl.rss",
+            artwork = RES + "tile_bbc",
+            preferFeedArtwork = false,
+        ),
+        // Longer BBC World Service programme, several times a day.
+        NewsSource(
+            id = "bbcgn",
+            name = "BBC Global News",
+            description = "BBC Global News Podcast, about 30 min (off by default)",
             feedUrl = "https://podcasts.files.bbci.co.uk/p02nq0gn.rss",
             artwork = RES + "tile_bbc",
             preferFeedArtwork = false,
+            defaultOn = false,
+        ),
+        // Limburg regional radio (L1). A live stream, not a news-only feed: it plays what is on air.
+        NewsSource(
+            id = "l1",
+            name = "L1 Limburg",
+            description = "Regional radio for Dutch Limburg, live (plays 5 min, off by default)",
+            feedUrl = "",
+            streamUrl = "https://d34pj260kw1xmk.cloudfront.net/icecast/l1/radio-bb-mp3",
+            liveMinutes = 5,
+            artwork = RES + "tile_l1",
             defaultOn = false,
         ),
     )
@@ -118,14 +137,17 @@ object FeedFetcher {
         source.streamUrl?.let {
             return Bulletin(source, "Live radio · ${source.liveMinutes} min", it, source.artwork)
         }
-        val conn = (URL(source.feedUrl).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8_000
-            readTimeout = 8_000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "NewsDrive/1.0 (Android)")
-            setRequestProperty("Accept", "application/rss+xml, application/xml, text/xml, */*")
-        }
+        var conn = open(source.feedUrl)
         return try {
+            // Follow redirects by hand, because HttpURLConnection will not switch between http and https.
+            var hops = 0
+            while (conn.responseCode in 300..399 && hops < 5) {
+                val next = conn.getHeaderField("Location") ?: return null
+                val target = URL(URL(conn.url.toString()), next).toString()
+                conn.disconnect()
+                conn = open(target)
+                hops++
+            }
             if (conn.responseCode !in 200..299) return null
             conn.inputStream.use { stream ->
                 val parser = XmlPullParserFactory.newInstance().newPullParser()
@@ -139,6 +161,15 @@ object FeedFetcher {
             conn.disconnect()
         }
     }
+
+    private fun open(url: String): HttpURLConnection =
+        (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 8_000
+            readTimeout = 8_000
+            instanceFollowRedirects = false
+            setRequestProperty("User-Agent", "NewsNow/1.4 (Android)")
+            setRequestProperty("Accept", "application/rss+xml, application/xml, text/xml, */*")
+        }
 
     private fun parseFirstEpisode(parser: XmlPullParser, source: NewsSource): Bulletin? {
         var inItem = false
