@@ -85,9 +85,29 @@ class MainActivity : AppCompatActivity() {
         wireActions()
         updateUi()
 
+        showWelcomeOnFirstInstall()
+
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
+    }
+
+    /** Shown once, and only on a fresh install: updating an older version does not show it. */
+    private fun showWelcomeOnFirstInstall() {
+        val prefs = getSharedPreferences("app", MODE_PRIVATE)
+        if (prefs.getBoolean("welcome_done", false)) return
+        prefs.edit().putBoolean("welcome_done", true).apply()
+        val info = try {
+            packageManager.getPackageInfo(packageName, 0)
+        } catch (e: Exception) {
+            return
+        }
+        if (info.firstInstallTime != info.lastUpdateTime) return
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.welcome_title)
+            .setMessage(R.string.welcome_message)
+            .setPositiveButton(R.string.welcome_ok, null)
+            .show()
     }
 
     override fun onStart() {

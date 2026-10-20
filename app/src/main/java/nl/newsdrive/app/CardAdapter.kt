@@ -39,19 +39,22 @@ class CardAdapter : RecyclerView.Adapter<CardAdapter.Holder>() {
     companion object {
         /** Cover-flow look: side cards turn away, shrink and fade. */
         fun install(pager: ViewPager2) {
-            val side = (56 * pager.resources.displayMetrics.density).toInt()
+            val d = pager.resources.displayMetrics.density
+            val side = (84 * d).toInt()
             pager.setPadding(side, 0, side, 0)
             pager.offscreenPageLimit = 3
             pager.setPageTransformer { page, position ->
                 val p = position.coerceIn(-2f, 2f)
                 val a = abs(p)
-                page.cameraDistance = 12000f * page.resources.displayMetrics.density
-                page.rotationY = -38f * p
-                page.scaleX = 1f - 0.16f * minOf(a, 1f)
+                val near = minOf(a, 1f)
+                page.cameraDistance = 9000f * d
+                page.rotationY = -48f * p
+                page.scaleX = 1f - 0.2f * near - 0.08f * (a - near)
                 page.scaleY = page.scaleX
-                page.translationX = -p * page.width * 0.06f
-                page.alpha = 1f - 0.45f * minOf(a, 1f)
-                page.translationZ = -a
+                // Pull the side cards under the middle one so they stack behind it.
+                page.translationX = -p * page.width * 0.34f
+                page.alpha = 1f - 0.35f * near - 0.3f * (a - near)
+                page.translationZ = 24f * d * (1f - near)
             }
         }
     }

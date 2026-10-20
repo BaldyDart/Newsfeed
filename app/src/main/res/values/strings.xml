@@ -19,4 +19,7 @@
     <string name="about_author">Created by</string>
     <string name="about_year">Year</string>
     <string name="about_not_set">Not set</string>
+    <string name="welcome_title">Welcome to News Now!</string>
+    <string name="welcome_message">This is a personal project, built to do one specific job for my own needs, with the help of Claude AI.\n\nYou can switch news feeds on or off under Settings (the gear icon, top right) > Feeds.</string>
+    <string name="welcome_ok">Got it</string>
 </resources>
