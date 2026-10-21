@@ -25,6 +25,8 @@ data class NewsSource(
     val liveMinutes: Int = 5,
     /** Whether the feed is switched on until the user changes it on the Feeds screen. */
     val defaultOn: Boolean = true,
+    /** True for feeds the user added in the app. */
+    val custom: Boolean = false,
 ) {
     val isLive: Boolean get() = streamUrl != null
 }
@@ -35,6 +37,8 @@ data class Bulletin(
     val episodeTitle: String,
     val audioUrl: String,
     val artworkUrl: String?,
+    /** Identifies the episode (original web address), also when it is played from the offline copy. */
+    val key: String = audioUrl,
 )
 
 object NewsConfig {
@@ -45,6 +49,7 @@ object NewsConfig {
     const val ACTION_REFRESH = "nl.newsdrive.REFRESH"
     const val ACTION_BACK10 = "nl.newsdrive.BACK10"
     const val ACTION_FWD10 = "nl.newsdrive.FWD10"
+    const val ACTION_AUTOSTART = "nl.newsdrive.AUTOSTART"
 
     private const val RES = "android.resource://nl.newsdrive.app/raw/"
     const val APP_TILE = RES + "tile_news"
@@ -53,7 +58,7 @@ object NewsConfig {
      * Playback order = list order. To change a station, edit the feedUrl here.
      * Each feed must be a podcast RSS feed whose newest <item> carries an audio <enclosure>.
      */
-    val SOURCES = listOf(
+    private val BUILTIN = listOf(
         // ANP radio news bulletin as produced for 538 (hourly).
         // The feed's own image is the 538 logo, so a plain "ANP Journaal" tile is used instead.
         NewsSource(
@@ -89,7 +94,7 @@ object NewsConfig {
         NewsSource(
             id = "vrt",
             name = "VRT NWS",
-            description = "Flemish news radio, live stream (plays 5 minutes)",
+            description = "Flemish news radio, live stream",
             feedUrl = "",
             streamUrl = "https://icecast.vrtcdn.be/vrtnws-high.mp3",
             liveMinutes = 5,
@@ -118,7 +123,7 @@ object NewsConfig {
         NewsSource(
             id = "l1",
             name = "L1 Limburg",
-            description = "Regional radio for Dutch Limburg, live (plays 5 min, off by default)",
+            description = "Regional radio for Dutch Limburg, live (off by default)",
             feedUrl = "",
             streamUrl = "https://d34pj260kw1xmk.cloudfront.net/icecast/l1/radio-bb-mp3",
             liveMinutes = 5,
@@ -127,28 +132,51 @@ object NewsConfig {
         ),
     )
 
-    fun byId(id: String): NewsSource? = SOURCES.firstOrNull { it.id == id }
+    /** Feeds the user added in the app (loaded at start-up, see CustomFeeds). */
+    @Volatile
+    var custom: List<NewsSource> = emptyList()
+
+    /** Built-in feeds followed by the user's own. Use FeedSettings.enabledSources for playback order. */
+    val sources: List<NewsSource> get() = BUILTIN + custom
+
+    fun byId(id: String): NewsSource? = sources.firstOrNull { it.id == id }
 }
 
 object FeedFetcher {
 
-    /** Downloads just enough of the feed to find the newest playable episode. Returns null on failure. */
-    fun latest(source: NewsSource): Bulletin? {
-        source.streamUrl?.let {
-            return Bulletin(source, "Live radio · ${source.liveMinutes} min", it, source.artwork)
-        }
-        var conn = open(source.feedUrl)
+    /** Opens a web address, following redirects (also between http and https). Null on any failure. */
+    fun connect(url: String): HttpURLConnection? {
+        var conn = open(url)
         return try {
-            // Follow redirects by hand, because HttpURLConnection will not switch between http and https.
             var hops = 0
             while (conn.responseCode in 300..399 && hops < 5) {
-                val next = conn.getHeaderField("Location") ?: return null
+                val next = conn.getHeaderField("Location")
+                if (next == null) {
+                    conn.disconnect()
+                    return null
+                }
                 val target = URL(URL(conn.url.toString()), next).toString()
                 conn.disconnect()
                 conn = open(target)
                 hops++
             }
-            if (conn.responseCode !in 200..299) return null
+            if (conn.responseCode !in 200..299) {
+                conn.disconnect()
+                null
+            } else conn
+        } catch (e: Exception) {
+            conn.disconnect()
+            null
+        }
+    }
+
+    /** Downloads just enough of the feed to find the newest playable episode. Returns null on failure. */
+    fun latest(source: NewsSource): Bulletin? {
+        source.streamUrl?.let {
+            return Bulletin(source, "Live radio", it, source.artwork)
+        }
+        val conn = connect(source.feedUrl) ?: return null
+        return try {
             conn.inputStream.use { stream ->
                 val parser = XmlPullParserFactory.newInstance().newPullParser()
                 parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
@@ -167,7 +195,7 @@ object FeedFetcher {
             connectTimeout = 8_000
             readTimeout = 8_000
             instanceFollowRedirects = false
-            setRequestProperty("User-Agent", "NewsNow/1.4 (Android)")
+            setRequestProperty("User-Agent", "NewsNow/1.5 (Android)")
             setRequestProperty("Accept", "application/rss+xml, application/xml, text/xml, */*")
         }
 
@@ -229,6 +257,7 @@ fun Bulletin.toMediaItem(): MediaItem {
         .setIsPlayable(true)
         .setIsBrowsable(false)
         .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
+        .setExtras(android.os.Bundle().apply { putString("key", key) })
     artworkUrl?.let { meta.setArtworkUri(Uri.parse(it)) }
     return MediaItem.Builder()
         .setMediaId(NewsConfig.SOURCE_PREFIX + source.id)

@@ -11,8 +11,18 @@ android {
         applicationId = "nl.newsdrive.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
+    }
+
+    // A fixed signing key, so every new build installs as an update over the previous one.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("newsnow.jks")
+            storePassword = "newsnow"
+            keyAlias = "newsnow"
+            keyPassword = "newsnow"
+        }
     }
 
     buildTypes {

@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -144,6 +145,16 @@ class MainActivity : AppCompatActivity() {
         cards = findViewById(R.id.cards)
         cards.adapter = cardAdapter
         CardAdapter.install(cards)
+        // Swipes anywhere on the screen's empty space (not just on the cards) move the carousel.
+        findViewById<View>(R.id.scroll).setOnTouchListener { _, e ->
+            val loc = IntArray(2)
+            cards.getLocationOnScreen(loc)
+            val m = MotionEvent.obtain(e)
+            m.setLocation(e.rawX - loc[0], e.rawY - loc[1])
+            val handled = cards.dispatchTouchEvent(m)
+            m.recycle()
+            handled
+        }
         cards.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageScrollStateChanged(state: Int) {
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) userSwiping = true
@@ -254,6 +265,10 @@ class MainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.menu_feeds -> {
                     startActivity(Intent(this, FeedsActivity::class.java))
+                    true
+                }
+                R.id.menu_options -> {
+                    startActivity(Intent(this, OptionsActivity::class.java))
                     true
                 }
                 R.id.menu_about -> {

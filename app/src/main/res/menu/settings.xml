@@ -4,6 +4,9 @@
         android:id="@+id/menu_feeds"
         android:title="@string/feeds" />
     <item
+        android:id="@+id/menu_options"
+        android:title="@string/options" />
+    <item
         android:id="@+id/menu_about"
         android:title="@string/about" />
 </menu>

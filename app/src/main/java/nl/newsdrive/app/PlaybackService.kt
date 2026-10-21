@@ -4,6 +4,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -33,7 +36,7 @@ import java.util.concurrent.Executors
  *
  * Library tree:  root -> [ "Play all news", then every enabled source ]
  * Selecting "Play all news" resolves, at that moment, to the newest bulletin of every source,
- * queued in NewsConfig.SOURCES order.
+ * queued in the saved feed order.
  */
 class PlaybackService : MediaLibraryService() {
 
@@ -48,6 +51,16 @@ class PlaybackService : MediaLibraryService() {
     private val refreshCommand = SessionCommand(NewsConfig.ACTION_REFRESH, Bundle.EMPTY)
     private val back10Command = SessionCommand(NewsConfig.ACTION_BACK10, Bundle.EMPTY)
     private val fwd10Command = SessionCommand(NewsConfig.ACTION_FWD10, Bundle.EMPTY)
+    private val autoStartCommand = SessionCommand(NewsConfig.ACTION_AUTOSTART, Bundle.EMPTY)
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
+    private var announcing = false
+    private var lastAutoStart = 0L
+
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == AppSettings.KEY_SPEED) main.post { applySpeed() }
+    }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate() {
@@ -83,9 +96,31 @@ class PlaybackService : MediaLibraryService() {
         }
 
         exoPlayer.addListener(object : Player.Listener {
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = rescheduleLiveStop()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                rescheduleLiveStop()
+                applySpeed()
+                markHeard(mediaItem)
+                announce(mediaItem)
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) = rescheduleLiveStop()
+
+            override fun onPlayerError(error: PlaybackException) = recoverFromError()
         })
+
+        tts = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) = resumeAfterAnnouncement()
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) = resumeAfterAnnouncement()
+                })
+            }
+        }
+        AppSettings.prefs(this).registerOnSharedPreferenceChangeListener(prefListener)
 
         session = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback()).build()
 
@@ -99,11 +134,78 @@ class PlaybackService : MediaLibraryService() {
         if (exoPlayer.hasNextMediaItem()) exoPlayer.seekToNextMediaItem() else exoPlayer.stop()
     }
 
+    private fun sourceOf(item: MediaItem?): NewsSource? =
+        item?.mediaId?.takeIf { it.startsWith(NewsConfig.SOURCE_PREFIX) }
+            ?.let { NewsConfig.byId(it.removePrefix(NewsConfig.SOURCE_PREFIX)) }
+
+    private fun applySpeed() {
+        val live = sourceOf(exoPlayer.currentMediaItem)?.isLive == true
+        exoPlayer.setPlaybackSpeed(if (live) 1f else AppSettings.speed(this))
+    }
+
+    /** A bulletin that has started playing counts as heard, so a later refresh can skip it. */
+    private fun markHeard(item: MediaItem?) {
+        val src = sourceOf(item) ?: return
+        if (src.isLive) return
+        item?.mediaMetadata?.extras?.getString("key")?.let { AppSettings.markHeard(this, src.id, it) }
+    }
+
+    /** Says the station name before its bulletin starts (option "Announce sources"). */
+    private fun announce(item: MediaItem?) {
+        if (!AppSettings.announce(this) || !ttsReady || item == null || !exoPlayer.playWhenReady) return
+        val name = item.mediaMetadata.title?.toString() ?: return
+        announcing = true
+        exoPlayer.pause()
+        tts?.speak(name, TextToSpeech.QUEUE_FLUSH, null, "announce")
+    }
+
+    private fun resumeAfterAnnouncement() {
+        main.post {
+            if (announcing) {
+                announcing = false
+                exoPlayer.play()
+            }
+        }
+    }
+
+    /** Playback failed (tunnel, dead zone): try the offline copy, otherwise move on to the next bulletin. */
+    private fun recoverFromError() {
+        announcing = false
+        val item = exoPlayer.currentMediaItem
+        val src = sourceOf(item)
+        val index = exoPlayer.currentMediaItemIndex
+        val isWeb = item?.localConfiguration?.uri?.scheme?.startsWith("http") == true
+        val cached = if (src != null && isWeb) OfflineCache.get(this, src) else null
+        if (cached != null) {
+            exoPlayer.replaceMediaItem(index, cached.toMediaItem())
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else if (exoPlayer.hasNextMediaItem()) {
+            exoPlayer.seekToNextMediaItem()
+            exoPlayer.prepare()
+            exoPlayer.play()
+        }
+    }
+
+    /** Auto-start from the car: only when nothing is playing, and not twice within two minutes. */
+    private fun maybeAutoStart() {
+        main.post {
+            val now = System.currentTimeMillis()
+            val idle = !exoPlayer.isPlaying
+            if (idle && now - lastAutoStart > 120_000) {
+                lastAutoStart = now
+                refreshAndPlay()
+            }
+        }
+    }
+
     private fun rescheduleLiveStop() {
         main.removeCallbacks(liveStop)
         val id = exoPlayer.currentMediaItem?.mediaId ?: return
         val src = NewsConfig.byId(id.removePrefix(NewsConfig.SOURCE_PREFIX)) ?: return
-        if (src.isLive && exoPlayer.isPlaying) main.postDelayed(liveStop, src.liveMinutes * 60_000L)
+        if (src.isLive && exoPlayer.isPlaying) {
+            main.postDelayed(liveStop, AppSettings.liveMinutes(this, src) * 60_000L)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -115,6 +217,8 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         main.removeCallbacks(liveStop)
+        AppSettings.prefs(this).unregisterOnSharedPreferenceChangeListener(prefListener)
+        tts?.shutdown()
         session?.run {
             player.release()
             release()
@@ -129,9 +233,25 @@ class PlaybackService : MediaLibraryService() {
     /** Newest bulletin per source, in configured order. Sources that fail are skipped. */
     private fun loadItems(sources: List<NewsSource>): MutableList<MediaItem> {
         val futures = sources.map { s ->
-            io.submit(Callable<Bulletin?> { runCatching { FeedFetcher.latest(s) }.getOrNull() })
+            io.submit(Callable<Bulletin?> {
+                runCatching { FeedFetcher.latest(s) }.getOrNull() ?: OfflineCache.get(this@PlaybackService, s)
+            })
         }
-        return futures.mapNotNull { it.get() }.map { it.toMediaItem() }.toMutableList()
+        var bulletins = futures.mapNotNull { it.get() }
+
+        // Skip bulletins that were already played, unless that would leave nothing new at all.
+        if (AppSettings.skipHeard(this)) {
+            val fresh = bulletins.filter { !it.source.isLive && !AppSettings.isHeard(this, it) }
+            if (fresh.isNotEmpty()) {
+                bulletins = bulletins.filter { it.source.isLive || !AppSettings.isHeard(this, it) }
+            }
+        }
+
+        // Keep a copy of each bulletin for offline use.
+        val online = bulletins.filter { it.audioUrl.startsWith("http") && !it.source.isLive }
+        if (online.isNotEmpty()) io.execute { online.forEach { OfflineCache.store(this, it) } }
+
+        return bulletins.map { it.toMediaItem() }.toMutableList()
     }
 
     private fun resolve(requested: List<MediaItem>): MutableList<MediaItem> {
@@ -143,6 +263,14 @@ class PlaybackService : MediaLibraryService() {
                 item.mediaId.startsWith(NewsConfig.SOURCE_PREFIX) -> {
                     val src = NewsConfig.byId(item.mediaId.removePrefix(NewsConfig.SOURCE_PREFIX))
                     if (src != null) out.addAll(loadItems(listOf(src)))
+                }
+                else -> {
+                    // Voice request ("play BBC on News Now"): a named station, otherwise all the news.
+                    val q = item.requestMetadata.searchQuery?.lowercase().orEmpty()
+                    val named = FeedSettings.enabledSources(this@PlaybackService)
+                        .firstOrNull { q.contains(it.name.lowercase()) || q.contains(it.id) }
+                    if (named != null) out.addAll(loadItems(listOf(named)))
+                    else out.addAll(loadItems(FeedSettings.enabledSources(this@PlaybackService)))
                 }
             }
         }
@@ -209,6 +337,8 @@ class PlaybackService : MediaLibraryService() {
             .build()
     }
 
+    private fun isCar(pkg: String) = pkg.contains("gearhead") || pkg.contains("android.car")
+
     private fun button(name: String, iconRes: Int, command: SessionCommand): CommandButton =
         CommandButton.Builder(CommandButton.ICON_UNDEFINED)
             .setDisplayName(name)
@@ -232,7 +362,9 @@ class PlaybackService : MediaLibraryService() {
                 .add(refreshCommand)
                 .add(back10Command)
                 .add(fwd10Command)
+                .add(autoStartCommand)
                 .build()
+            if (AppSettings.autoStart(this@PlaybackService) && isCar(controller.packageName)) maybeAutoStart()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
                 .setCustomLayout(layout)
@@ -250,6 +382,7 @@ class PlaybackService : MediaLibraryService() {
                 NewsConfig.ACTION_REFRESH -> refreshAndPlay()
                 NewsConfig.ACTION_BACK10 -> { session.player.seekBack(); ok }
                 NewsConfig.ACTION_FWD10 -> { session.player.seekForward(); ok }
+                NewsConfig.ACTION_AUTOSTART -> { if (AppSettings.autoStart(this@PlaybackService)) maybeAutoStart(); ok }
                 else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
         }

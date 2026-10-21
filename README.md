@@ -32,6 +32,18 @@ Tap the gear in the top-right corner of the phone screen:
 - **Feeds**: switch each news feed on or off. Feeds play in the order shown, at least one must stay on, and the choice is remembered. It applies the next time you start or refresh the news, in the app and in Android Auto.
 - **About**: app version, author, year and the project URL (https://github.com/BaldyDart/Newsfeed).
 
+## Options (gear > Options)
+
+- **Skip bulletins I have heard**: a refresh plays only new bulletins; if nothing is new, the latest play again.
+- **Announce the source**: speaks the station name before each bulletin.
+- **Playback speed**: 1× to 2× for bulletins (not live streams).
+- **Start automatically in the car**: starts the news when Android Auto connects, or when the phone connects to the Bluetooth device you pick. Best effort: Android limits what apps may start in the background.
+- Voice: "Hey Google, play News Now", or "play BBC on News Now".
+
+## Feeds (gear > Feeds)
+
+Switch feeds on or off, reorder them with the arrows, set how long a live stream plays, and add your own podcast feed or live stream with **Add feed**. The last bulletin of each podcast feed is kept on the phone and used when there is no connection.
+
 ## Build
 
 You need a computer with Android Studio, or a free GitHub account.

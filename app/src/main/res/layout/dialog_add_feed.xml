@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <EditText
+        android:id="@+id/newName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/feed_name_hint"
+        android:importantForAutofill="no"
+        android:inputType="textCapSentences"
+        android:minHeight="48dp" />
+
+    <EditText
+        android:id="@+id/newUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/feed_url_hint"
+        android:importantForAutofill="no"
+        android:inputType="textUri"
+        android:minHeight="48dp" />
+
+    <RadioGroup
+        android:id="@+id/newType"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp">
+
+        <RadioButton
+            android:id="@+id/typePodcast"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/type_podcast" />
+
+        <RadioButton
+            android:id="@+id/typeLive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/type_live" />
+    </RadioGroup>
+</LinearLayout>

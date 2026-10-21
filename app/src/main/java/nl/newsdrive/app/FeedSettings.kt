@@ -19,5 +19,6 @@ object FeedSettings {
 
     /** Enabled sources in playback order. Never empty: if everything is off, all feeds are used. */
     fun enabledSources(context: Context): List<NewsSource> =
-        NewsConfig.SOURCES.filter { isEnabled(context, it.id) }.ifEmpty { NewsConfig.SOURCES.filter { s -> s.defaultOn } }
+        AppSettings.ordered(context).filter { isEnabled(context, it.id) }
+            .ifEmpty { AppSettings.ordered(context).filter { s -> s.defaultOn } }
 }

@@ -22,6 +22,7 @@
         android:visibility="invisible" />
 
     <ScrollView
+        android:id="@+id/scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
@@ -38,7 +39,7 @@
             <androidx.viewpager2.widget.ViewPager2
                 android:id="@+id/cards"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
+                android:layout_height="340dp"
                 android:clipChildren="false"
                 android:clipToPadding="false"
                 android:contentDescription="@string/artwork"

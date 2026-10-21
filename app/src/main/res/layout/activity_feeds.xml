@@ -41,6 +41,16 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/addFeed"
+                style="@style/Widget.Material3.Button.TonalButton.Icon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="8dp"
+                android:text="@string/add_feed"
+                app:icon="@drawable/ic_add" />
+
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
