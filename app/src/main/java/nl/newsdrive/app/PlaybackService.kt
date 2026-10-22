@@ -211,8 +211,13 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onTaskRemoved(rootIntent: android.content.Intent?) {
-        val p = session?.player
-        if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+        // Swiping the app away from the recent apps list stops the audio and the service.
+        main.removeCallbacks(liveStop)
+        announcing = false
+        tts?.stop()
+        exoPlayer.stop()
+        exoPlayer.clearMediaItems()
+        stopSelf()
     }
 
     override fun onDestroy() {
